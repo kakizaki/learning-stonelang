@@ -1,4 +1,5 @@
 import ast.*
+import eval.Evaludator
 import parser.parseBlock
 import parser.parseExpr
 import parser.parseProgram
@@ -55,15 +56,22 @@ while i < 10 {
   }
   i = i + 1
 }
+
 even + odd
         """.trimIndent()
     )
+
+    //val env = eval.BasicEnvironment()
+    val evaluator = Evaludator()
     for (s in test3) {
         println(" input: $s")
         val l = Lexer(StringReader(s))
+        //val l = Lexer(CodeDialog())
         while (l.peek(0) != Token.EOF) {
             val tree = parseProgram(l)
-            println("output: ${tree.toString()}")
+            println("tree: ${tree.toString()}")
+            val r = evaluator.eval(tree)
+            println("=> $r")
         }
     }
 }
