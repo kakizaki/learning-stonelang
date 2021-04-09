@@ -2,7 +2,7 @@ package eval
 
 import ast.*
 
-class Evaludator {
+class Evaluator {
     companion object {
         const val TRUE = 1
         const val FALSE = 0

@@ -1,9 +1,7 @@
-import ast.*
-import eval.Evaludator
+import eval.Evaluator
 import parser.parseBlock
 import parser.parseExpr
 import parser.parseProgram
-import parser.parseStatement
 import java.io.StringReader
 
 fun main(args: Array<String>) {
@@ -62,7 +60,7 @@ even + odd
     )
 
     //val env = eval.BasicEnvironment()
-    val evaluator = Evaludator()
+    val evaluator = Evaluator()
     for (s in test3) {
         println(" input: $s")
         val l = Lexer(StringReader(s))
