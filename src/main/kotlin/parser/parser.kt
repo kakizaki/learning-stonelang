@@ -88,37 +88,38 @@ fun isLeftJoinOperator(op: String): Boolean {
     return true
 }
 
+// (演算子op < op以降の演算子) が成り立つうちは以降の演算子の式を結合する
 fun combineBinaryExpr(left: ASTree, op: Token, opPrec: Int, l: Lexer): ASTree {
-    val right = parseFactor(l)
+    var right = parseFactor(l)
 
-    // 次のトークンが演算子か
-    val nextOpToken = l.peek(0)
-    val nextOpPrec = getOperatorPrecedence(nextOpToken.getText())
-    if (nextOpPrec < 0) {
-        return BinaryExpr(left, ASTLeaf(op), right)
-    }
+    while (true) {
+        // 次のトークンが演算子か
+        val nextOpToken = l.peek(0)
+        val nextOpPrec = getOperatorPrecedence(nextOpToken.getText())
 
-    // 現在の演算子を先に探査する
-    val priorCurrentOp = when {
-        opPrec > nextOpPrec -> true
-        opPrec < nextOpPrec -> false
-        else -> {
-            if (op.getText() == nextOpToken.getText())
-                isLeftJoinOperator(op.getText())
-            else
-                // 同じ優先度の場合は次を優先
-                //  探査をやめると "a + b * c / d" -> "(a + (b * c)) / d" になってしまう
-                false
+        // 引数の演算子が優先か
+        val priorArgOp = when {
+            nextOpPrec < 0 -> true
+            opPrec > nextOpPrec -> true
+            opPrec < nextOpPrec -> false
+            else -> {
+                if (op.getText() == nextOpToken.getText())
+                    isLeftJoinOperator(op.getText())
+                else
+                    true
+            }
+        }
+
+        if (priorArgOp) {
+            break
+        } else {
+            // 以降の演算子を優先する場合は右辺の結合を続ける
+            l.read()
+            right = combineBinaryExpr(right, nextOpToken, nextOpPrec, l)
         }
     }
 
-    if (priorCurrentOp) {
-        return BinaryExpr(left, ASTLeaf(op), right)
-    } else {
-        l.read()
-        val tree = combineBinaryExpr(right, nextOpToken, nextOpPrec, l)
-        return BinaryExpr(left, ASTLeaf(op), tree)
-    }
+    return BinaryExpr(left, ASTLeaf(op), right)
 }
 
 fun parseProgram(l: Lexer): ASTree {
