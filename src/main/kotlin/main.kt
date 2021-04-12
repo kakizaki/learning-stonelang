@@ -1,4 +1,6 @@
+import ast.ASTree
 import eval.Evaluator
+import parser.OperationParseTest
 import parser.parseBlock
 import parser.parseExpr
 import parser.parseProgram
@@ -22,6 +24,10 @@ fun main(args: Array<String>) {
         "1 + 2 * 3 / 4 + 5",
         "1 + 2 * 3 / (4 + 5)",
         "x = y = 1",
+        "x = x + y + 1",
+        "x = x + y - 1",
+        "x = x + y - 1",
+        "x = y = x + y + 1 * 2 + 1",
         "1 + -2",
     )
     for (s in test) {
@@ -43,28 +49,46 @@ fun main(args: Array<String>) {
 
     val test3 = listOf(
         """
+def counter(c) { 
+  def () { c = c + 1 }
+}            
+b = counter(0)
+c = counter(1)
+b()
+c()
+b()
+c()
+        """.trimIndent(),
+        """
 even = 0
 odd = 0
 i = 1
 while i < 10 {
   if i % 2 == 0 {
-    even = even + i
+    even = even + i 
   } else {
     odd = odd + i
   }
   i = i + 1
 }
-
+def aaa(a, b, c) {
+    d = a + b + c
+}
+def bbb() {
+    d = 34
+    aaa(d, 1, 2)
+    d
+}
+aaa(1, 2, 3)
+bbb()
 even + odd
         """.trimIndent()
     )
 
-    //val env = eval.BasicEnvironment()
     val evaluator = Evaluator()
     for (s in test3) {
         println(" input: $s")
         val l = Lexer(StringReader(s))
-        //val l = Lexer(CodeDialog())
         while (l.peek(0) != Token.EOF) {
             val tree = parseProgram(l)
             println("tree: ${tree.toString()}")
@@ -72,6 +96,8 @@ even + odd
             println("=> $r")
         }
     }
+
+
 }
 
 

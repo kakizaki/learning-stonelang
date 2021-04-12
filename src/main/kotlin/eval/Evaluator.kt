@@ -12,13 +12,14 @@ class Evaluator {
         }
     }
 
-    val env = BasicEnvironment()
+    private val globalEnv = BasicEnvironment()
+
+    private var env: Environment = globalEnv
+
 
     fun eval(t: ASTree): Any? {
         when (t) {
-            is Name -> {
-                return env.get(t.name())
-            }
+            is Name -> { return env.get(t.name()) }
             is NumberLiteral -> {
                 return t.value()
             }
@@ -33,52 +34,43 @@ class Evaluator {
                 throw Exception("bad type for -")
             }
             is BinaryExpr -> {
-                val op = t.operator()
-                if (op == "=") {
-                    return computeAssign(t)
-                }
-                val lv = eval(t.left())
-                val rv = eval(t.right())
-                return computeOp(lv, op, rv)
+                return evalT(t)
             }
             is NullStatement -> {
                 return null
             }
             is BlockStatement -> {
-                var r: Any? = null
-                for (n in t) {
-                    if (n is NullStatement) {
-                        continue
-                    }
-                    r = eval(n)
-                }
-                return r
+                return evalT(t)
             }
             is IfStatement -> {
-                val c = eval(t.condition())
-                if (c as? Int == TRUE) {
-                    return eval(t.thenBlock())
-                }
-                t.elseBlock()?.let {
-                    return eval(it)
-                }
-                return 0
+                return evalT(t)
             }
             is WhileStatement -> {
-                var r: Any? = null
-                while (true) {
-                    val c = eval(t.condition())
-                    if (c as? Int == TRUE) {
-                        r = eval(t.body())
-                    } else {
-                        break
-                    }
-                }
-                return r
+                return evalT(t)
+            }
+            is FuncDef -> {
+                return evalT(t)
+            }
+            is FuncCall -> {
+                return evalT(t)
+            }
+            is FuncLiteralDef -> {
+                return evalT(t)
             }
         }
 
         throw Exception("cannot eval: ${t.javaClass.simpleName} : $t")
+    }
+
+
+    private fun evalT(t: BinaryExpr): Any? {
+        val op = t.operator()
+        if (op == "=") {
+            return computeAssign(t)
+        }
+        val lv = eval(t.left())
+        val rv = eval(t.right())
+        return computeOp(lv, op, rv)
     }
 
     private fun computeAssign(t: BinaryExpr): Any? {
@@ -123,4 +115,83 @@ class Evaluator {
             }
         }
     }
+
+    private fun evalT(t: BlockStatement): Any? {
+        var r: Any? = null
+        for (n in t) {
+            if (n is NullStatement) {
+                continue
+            }
+            r = eval(n)
+        }
+        return r
+    }
+
+    private fun evalT(t: IfStatement): Any? {
+        val c = eval(t.condition())
+        if (c as? Int == Evaluator.TRUE) {
+            return eval(t.thenBlock())
+        }
+        t.elseBlock()?.let {
+            return eval(it)
+        }
+        return 0
+    }
+
+    private fun evalT(t: WhileStatement): Any? {
+        var r: Any? = null
+        while (true) {
+            val c = eval(t.condition())
+            if (c as? Int == Evaluator.TRUE) {
+                r = eval(t.body())
+            } else {
+                break
+            }
+        }
+        return r
+    }
+
+    private fun evalT(t: FuncDef): Any? {
+        val f = Function(t, env)
+        val name = t.funcName.name()
+        env.put(name, f)
+        return name
+    }
+
+    private fun evalT(t: FuncLiteralDef): Any? {
+        val f = Function(t, env)
+        return f
+    }
+
+    private fun evalT(t: FuncCall): Any? {
+        val name = t.funcName.name()
+        val f = env.get(name) as? Function
+        if (f == null) {
+            throw Exception("undefiend function $name")
+        }
+
+        val nestedEnv = NestedEnvironment(f.env)
+        for ((i, n) in t.args.withIndex()) {
+            val v = eval(n)
+            if (i < f.params.size) {
+                nestedEnv.putNew(f.params[i].name(), v)
+            }
+        }
+
+        return switchEnv(nestedEnv) {
+            eval(f.body)
+        }
+    }
+
+    private fun switchEnv(newEnv: Environment, block: () -> Any?): Any? {
+        val currentEnv = env
+        env = newEnv
+        val v = block()
+        env = currentEnv
+        return v
+    }
+
 }
+
+
+

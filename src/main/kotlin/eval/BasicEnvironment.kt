@@ -12,4 +12,8 @@ class BasicEnvironment: Environment {
     override fun get(name: String): Any? {
         return values[name]
     }
+
+    override fun has(name: String): Boolean {
+        return values.containsKey(name)
+    }
 }

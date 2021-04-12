@@ -5,7 +5,13 @@ import Token
 import ast.*
 
 // BNF
-// primary: "(" expr ")" | NUMBER | IDENTIFIER | STRING
+// param-list:  IDENTIFIER ( "," IDENTIFIER )
+// func-def:    "def" IDENTIFIER "(" [ param-list ] ")" block
+// closure-def: "def" "(" [ param-list ] ")" block
+// arg-list:    expr ( "," expr )
+// func-call:   IDENTIFIER "(" [ arg-list ] ")"
+
+// primary: "(" expr ")" | NUMBER | IDENTIFIER | STRING | func-call | closure-def
 // factor:  "-" primary | primary
 // expr:    factor { OP factor }
 // block:   "{" [ statement ] {(";" | EOL) [ statement ]} "}"
@@ -13,7 +19,7 @@ import ast.*
 // statement:   "if" expr block [ "else" block ]
 //              | "while" expr block
 //              | simple
-// program: [ statement ] (";" | EOL)
+// program: [ func-def | statement ] (";" | EOL)
 
 fun parseError(t: Token): Exception {
     return Exception("parse error ${t.getText()}")
@@ -40,7 +46,7 @@ inline fun readIf(l: Lexer, cond:(String) -> Boolean): Token? {
 
 fun isReservedCharacter(t: Token): Boolean {
     return  when (t.getText()) {
-        ";", "}", Token.EOL -> true
+        ";", "}", Token.EOL, ")", "(", "def" -> true
         else -> false
     }
 }
@@ -60,13 +66,21 @@ fun isStatementBegining(t: Token): Boolean {
     if (text == "-") return true
 
     // primary
-    if (text == "(") return true
     if (t.isNumber()) return true
     if (t.isString()) return true
     if (t.isIdentifier()) {
+        if (text == "(") return true
+        if (text == "def") return true
         if (isReservedCharacter(t) == false) {
             return true
         }
+    }
+    return false
+}
+
+fun isFuncDefBegining(t: Token): Boolean {
+    if (t.getText() == "def") {
+        return true
     }
     return false
 }
@@ -124,17 +138,121 @@ fun combineBinaryExpr(left: ASTree, op: Token, opPrec: Int, l: Lexer): ASTree {
 
 fun parseProgram(l: Lexer): ASTree {
     val t = l.peek(0)
-    val statement = if (isStatementBegining(t)) {
+
+    val tree = if (isFuncDefBegining(t)) {
+        parseFuncDef(l)
+    } else if (isStatementBegining(t)) {
         parseStatement(l)
     } else {
         NullStatement()
     }
 
     if (readIf(l, ";", Token.EOL) != null) {
-        return statement
+        return tree
     }
 
     throw parseError(l.read())
+}
+
+fun parseFuncDef(l: Lexer): FuncDef {
+    if (readIf(l, "def") == null) {
+        throw parseError(l.read())
+    }
+
+    val defName = l.read()
+    if (defName.isIdentifier() == false) {
+        throw parseError(defName)
+    }
+    if (isReservedCharacter(defName)) {
+        throw parseError(defName)
+    }
+
+    if (readIf(l, "(") == null) {
+        throw parseError(l.read())
+    }
+
+    val params = mutableListOf<Name>()
+    if (readIf(l, ")") == null) {
+        while (true) {
+            val p = l.read()
+            if (p.isIdentifier() && isReservedCharacter(p) == false) {
+                params.add(Name(p))
+            } else {
+                throw parseError(p)
+            }
+            if (readIf(l, ")") != null) {
+                break
+            }
+            if (readIf(l, ",") == null) {
+                throw parseError(p)
+            }
+        }
+    }
+
+    val body = parseBlock(l)
+    return FuncDef(Name(defName), params, body)
+}
+
+fun parseFuncLiteralDef(l: Lexer): FuncLiteralDef {
+    if (readIf(l, "def") == null) {
+        throw parseError(l.read())
+    }
+
+    if (readIf(l, "(") == null) {
+        throw parseError(l.read())
+    }
+
+    val params = mutableListOf<Name>()
+    if (readIf(l, ")") == null) {
+        while (true) {
+            val p = l.read()
+            if (p.isIdentifier() && isReservedCharacter(p) == false) {
+                params.add(Name(p))
+            } else {
+                throw parseError(p)
+            }
+            if (readIf(l, ")") != null) {
+                break
+            }
+            if (readIf(l, ",") == null) {
+                throw parseError(p)
+            }
+        }
+    }
+
+    val body = parseBlock(l)
+    return FuncLiteralDef(params, body)
+}
+
+
+fun parseFuncCall(l: Lexer): ASTree {
+    val callName = l.read()
+    if (callName.isIdentifier() == false) {
+        throw parseError(callName)
+    }
+    if (isReservedCharacter(callName)) {
+        throw parseError(callName)
+    }
+
+    if (readIf(l, "(") == null) {
+        throw parseError(l.read())
+    }
+    val args = mutableListOf<ASTree>()
+    if (readIf(l, ")") != null) {
+        while (true) {
+            val a = parseExpr(l)
+            args.add(a)
+
+            if (readIf(l, ")") != null) {
+                break
+            }
+            if (readIf(l, ",") == null) {
+                throw parseError(l.read())
+            }
+        }
+    }
+
+    return FuncCall(Name(callName), args)
 }
 
 fun parseStatement(l: Lexer): ASTree {
@@ -221,17 +339,20 @@ fun parseFactor(l: Lexer): ASTree {
 }
 
 fun parsePrimary(l: Lexer): ASTree {
-    val t = l.read()
+    val t = l.peek(0)
 
     if (t.isNumber()) {
+        l.read()
         return NumberLiteral(t)
     }
 
     if (t.isString()) {
+        l.read()
         return StringLiteral(t)
     }
 
     if (t.getText() == "(") {
+        l.read()
         val expr = parseExpr(l)
         if (readIf(l, ")") != null) {
             return expr
@@ -242,7 +363,30 @@ fun parsePrimary(l: Lexer): ASTree {
 
     if (t.isIdentifier()) {
         if (isReservedCharacter(t) == false) {
+            l.read()
+            if (readIf(l, "(") != null) {
+                val args = mutableListOf<ASTree>()
+                if (readIf(l, ")") == null) {
+                    while (true) {
+                        val a = parseExpr(l)
+                        args.add(a)
+
+                        if (readIf(l, ")") != null) {
+                            break
+                        }
+                        if (readIf(l, ",") == null) {
+                            throw parseError(l.read())
+                        }
+                    }
+                }
+                return FuncCall(Name(t), args)
+            }
+
             return Name(t)
+        }
+
+        if (t.getText() == "def") {
+            return parseFuncLiteralDef(l)
         }
     }
 
