@@ -163,7 +163,7 @@ fun parseSimple(l: Lexer): ASTree {
     return parseExpr(l)
 }
 
-fun parseBlock(l: Lexer): ASTree {
+fun parseBlock(l: Lexer): BlockStatement {
     val list = mutableListOf<ASTree>()
 
     if (readIf(l, "{") == null) {
@@ -177,14 +177,12 @@ fun parseBlock(l: Lexer): ASTree {
 
     while (true) {
         if (readIf(l, ";", Token.EOL) == null) {
-            throw parseError(l.read())
+            break
         }
 
         if (isStatementBegining(l)) {
             val statement = parseStatement(l)
             list.add(statement)
-        } else {
-            break
         }
     }
 
