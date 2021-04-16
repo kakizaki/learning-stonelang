@@ -4,6 +4,25 @@ import Lexer
 import Token
 import ast.*
 
+object ParseUtil {
+    val binaryOperator: BinaryOperatorSet
+
+    init {
+        binaryOperator = BinaryOperatorContainer().apply {
+            add("=", 1, false)
+            add("==", 2, true)
+            add("<", 2, true)
+            add(">", 2, true)
+            add("+", 3, true)
+            add("-", 3, true)
+            add("*", 4, true)
+            add("/", 4, true)
+            add("%", 4, true)
+        }
+    }
+
+}
+
 // BNF
 // param-list:  IDENTIFIER ( "," IDENTIFIER )
 // func-def:    "def" IDENTIFIER "(" [ param-list ] ")" block
@@ -85,56 +104,6 @@ fun isFuncDefBegining(t: Token): Boolean {
     return false
 }
 
-fun getOperatorPrecedence(op: String): Int {
-    return when (op) {
-        "=" -> 1
-        "==", ">", "<" -> 2
-        "+", "-" -> 3
-        "*", "/", "%" -> 4
-        else -> -1
-    }
-}
-
-fun isLeftJoinOperator(op: String): Boolean {
-    if (op == "=") {
-        return false
-    }
-    return true
-}
-
-// (演算子op < op以降の演算子) が成り立つうちは以降の演算子の式を結合する
-fun combineBinaryExpr(left: ASTree, op: Token, opPrec: Int, l: Lexer): ASTree {
-    var right = parseFactor(l)
-
-    while (true) {
-        // 次のトークンが演算子か
-        val nextOpToken = l.peek(0)
-        val nextOpPrec = getOperatorPrecedence(nextOpToken.getText())
-
-        // 引数の演算子が優先か
-        val priorArgOp = when {
-            nextOpPrec < 0 -> true
-            opPrec > nextOpPrec -> true
-            opPrec < nextOpPrec -> false
-            else -> {
-                if (op.getText() == nextOpToken.getText())
-                    isLeftJoinOperator(op.getText())
-                else
-                    true
-            }
-        }
-
-        if (priorArgOp) {
-            break
-        } else {
-            // 以降の演算子を優先する場合は右辺の結合を続ける
-            l.read()
-            right = combineBinaryExpr(right, nextOpToken, nextOpPrec, l)
-        }
-    }
-
-    return BinaryExpr(left, ASTLeaf(op), right)
-}
 
 fun parseProgram(l: Lexer): ASTree {
     val t = l.peek(0)
@@ -312,19 +281,18 @@ fun parseBlock(l: Lexer): BlockStatement {
 }
 
 fun parseExpr(l: Lexer): ASTree {
-    var left = parseFactor(l)
+    val builder = BinaryExprBuilder(ParseUtil.binaryOperator)
 
     while (true) {
-        val t = l.peek(0)
-        val prec = getOperatorPrecedence(t.getText())
-        if (prec < 0) {
-            break
+        val f = parseFactor(l)
+        val op = l.peek(0)
+        if (ParseUtil.binaryOperator.isOperator(op.getText())) {
+            l.read()
+            builder.next(f, op)
+        } else {
+            return builder.last(f)
         }
-        l.read()
-        left = combineBinaryExpr(left, t, prec, l)
     }
-
-    return left
 }
 
 fun parseFactor(l: Lexer): ASTree {
@@ -392,4 +360,12 @@ fun parsePrimary(l: Lexer): ASTree {
 
     throw parseError(t)
 }
+
+
+
+
+
+
+
+
 
