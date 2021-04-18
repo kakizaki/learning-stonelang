@@ -21,6 +21,10 @@ class BinaryExprBuilder(
         shiftElement.clear()
     }
 
+    /**
+     * 最後の単項
+     * 式の全体が 1+2*3 であったとき、(f:3)
+     */
     fun last(f: ASTree): ASTree {
         var right = f
         for (n in shiftElement.asReversed()) {
@@ -29,6 +33,10 @@ class BinaryExprBuilder(
         return right
     }
 
+    /**
+     * 単項と演算子
+     * 式の全体が 1+2*3 であったとき、(f:1, opToken:+) , (f:2, opToken:*)
+     */
     fun next(f: ASTree, opToken: Token) {
         var right = f
 
@@ -37,15 +45,16 @@ class BinaryExprBuilder(
             throw Exception("unsupported operator")
         }
 
-        // right より積まれた要素の演算子が優先の場合は、right と積まれた要素と繋げて right にする
+        // 引数の演算子より積まれた要素の演算子を優先する場合は、積まれた要素と right で式を作り right にセットする
+        // 上記が可能な間は繰り返し
         while (shiftElement.isEmpty() == false) {
             val last = shiftElement.last()
-            val bindLastOp = when {
+            val combineLastOp = when {
                 op.precedence < last.op.precedence -> true
                 op.precedence > last.op.precedence -> false
                 else -> last.op.leftJoin
             }
-            if (bindLastOp) {
+            if (combineLastOp) {
                 right = BinaryExpr(last.left, ASTLeaf(last.opToken), right)
                 shiftElement.removeLast()
             } else {
