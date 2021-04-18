@@ -82,6 +82,12 @@ def bbb() {
 aaa(1, 2, 3)
 bbb()
 even + odd
+print(even)
+s = "1234"
+length(s)
+i = toInt(s)
+currentTime()
+r = read()
         """.trimIndent()
     )
 

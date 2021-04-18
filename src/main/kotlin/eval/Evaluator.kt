@@ -16,6 +16,9 @@ class Evaluator {
 
     private var env: Environment = globalEnv
 
+    init {
+        Natives.registerToEnvironment(globalEnv)
+    }
 
     fun eval(t: ASTree): Any? {
         when (t) {
@@ -165,22 +168,34 @@ class Evaluator {
 
     private fun evalT(t: FuncCall): Any? {
         val name = t.funcName.name()
-        val f = env.get(name) as? Function
-        if (f == null) {
-            throw Exception("undefiend function $name")
+        val f = env.get(name)
+        if (f is NativeKotlinFunction) {
+            if (f.numParams != t.args.size) {
+                throw Exception("cannot call native method: need ${f.numParams} arguments, but ${t.args.size}")
+            }
+            val list = mutableListOf<Any?>()
+            for ((i, n) in t.args.withIndex()) {
+                val v = eval(n)
+                list.add(v)
+            }
+            return f.invoke(list, t)
         }
 
-        val nestedEnv = NestedEnvironment(f.env)
-        for ((i, n) in t.args.withIndex()) {
-            val v = eval(n)
-            if (i < f.params.size) {
-                nestedEnv.putNew(f.params[i].name(), v)
+        if (f is Function) {
+            val nestedEnv = NestedEnvironment(f.env)
+            for ((i, n) in t.args.withIndex()) {
+                val v = eval(n)
+                if (i < f.params.size) {
+                    nestedEnv.putNew(f.params[i].name(), v)
+                }
+            }
+
+            return switchEnv(nestedEnv) {
+                eval(f.body)
             }
         }
 
-        return switchEnv(nestedEnv) {
-            eval(f.body)
-        }
+        throw Exception("undefined function $name")
     }
 
     private fun switchEnv(newEnv: Environment, block: () -> Any?): Any? {

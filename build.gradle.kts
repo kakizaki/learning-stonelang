@@ -14,7 +14,9 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test-junit"))
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.4.31")
 }
+
 
 tasks.test {
     useJUnit()

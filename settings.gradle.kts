@@ -1,3 +1,3 @@
 
-rootProject.name = "StoneLng"
+rootProject.name = "StoneLang"
 
