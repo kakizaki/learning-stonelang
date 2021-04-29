@@ -1,6 +1,8 @@
 package eval
 
+import Token
 import ast.*
+
 
 class Evaluator {
     companion object {
@@ -14,6 +16,12 @@ class Evaluator {
 
     private val globalEnv = BasicEnvironment()
 
+    private val functions = mutableMapOf<String, FuncDef>()
+
+    private val classes = mutableMapOf<String, ClassDef>()
+
+
+
     private var env: Environment = globalEnv
 
     init {
@@ -23,12 +31,8 @@ class Evaluator {
     fun eval(t: ASTree): Any? {
         when (t) {
             is Name -> { return env.get(t.name()) }
-            is NumberLiteral -> {
-                return t.value()
-            }
-            is StringLiteral -> {
-                return t.value()
-            }
+            is NumberLiteral -> return t.value()
+            is StringLiteral -> return t.value()
             is NegativeExpr -> {
                 val v = eval(t.operand())
                 if (v is Int) {
@@ -36,30 +40,16 @@ class Evaluator {
                 }
                 throw Exception("bad type for -")
             }
-            is BinaryExpr -> {
-                return evalT(t)
-            }
-            is NullStatement -> {
-                return null
-            }
-            is BlockStatement -> {
-                return evalT(t)
-            }
-            is IfStatement -> {
-                return evalT(t)
-            }
-            is WhileStatement -> {
-                return evalT(t)
-            }
-            is FuncDef -> {
-                return evalT(t)
-            }
-            is FuncCall -> {
-                return evalT(t)
-            }
-            is FuncLiteralDef -> {
-                return evalT(t)
-            }
+            is BinaryExpr -> return evalT(t)
+            is NullStatement -> return null
+            is BlockStatement -> return evalT(t)
+            is IfStatement -> return evalT(t)
+            is WhileStatement -> return evalT(t)
+            is FuncDef -> return evalT(t)
+            is ClassDef -> return evalT(t)
+            is FuncCall -> return evalT(t)
+            is FuncLiteralDef -> return evalT(t)
+            is ObjectMember -> return evalT(t)
         }
 
         throw Exception("cannot eval: ${t.javaClass.simpleName} : $t")
@@ -77,13 +67,24 @@ class Evaluator {
     }
 
     private fun computeAssign(t: BinaryExpr): Any? {
-        val name = t.left() as? Name
-        if (name == null) {
-            throw Exception("bad assignment")
+        // TODO this, base 等への代入の禁止
+        when (val l = t.left()) {
+            is Name -> {
+                val v = eval(t.right())
+                env.put(l.name(), v)
+                return v
+            }
+            is ObjectMember -> {
+                val o = env.get(l.objName.name())
+                if (o is StoneObject) {
+                    val v = eval(t.right())
+                    return o.set(l.memberName.name(), v)
+                }
+                throw Exception("bad assignment: ${l.objName.name()} is not ${StoneObject::class.simpleName}")
+            }
         }
-        val v = eval(t.right())
-        env.put(name.name(), v)
-        return v
+
+        throw Exception("bad assignment")
     }
 
     private fun computeOp(lv: Any?, op: String, rv: Any?): Any? {
@@ -155,47 +156,108 @@ class Evaluator {
     }
 
     private fun evalT(t: FuncDef): Any? {
-        val f = Function(t, env)
+        // TODO parameter overload
+        // TODO overwrite same name function
         val name = t.funcName.name()
-        env.put(name, f)
+        if (globalEnv.find(name)) {
+            throw Exception("'${name}' has defined.")
+        }
+        globalEnv.put(name, Function(t, globalEnv))
+        return name
+    }
+
+    private fun evalT(t: ClassDef): Any? {
+        // TODO extends
+        // TODO overwrite same name class
+        val name = t.className.name()
+        if (globalEnv.find(name)) {
+            throw Exception("'${name}' has defined.")
+        }
+        globalEnv.put(name, t)
         return name
     }
 
     private fun evalT(t: FuncLiteralDef): Any? {
-        val f = Function(t, env)
-        return f
+        return Function(t, env)
     }
 
     private fun evalT(t: FuncCall): Any? {
-        val name = t.funcName.name()
-        val f = env.get(name)
-        if (f is NativeKotlinFunction) {
-            if (f.numParams != t.args.size) {
-                throw Exception("cannot call native method: need ${f.numParams} arguments, but ${t.args.size}")
+        val obj = t.callee as? Name
+        if (obj != null) {
+            val f = env.get(obj.name())
+            when (f) {
+                is NativeKotlinFunction -> return call(t, f)
+                is Function -> return call(t, f)
+                is ClassDef -> return instantiate(f)
             }
-            val list = mutableListOf<Any?>()
-            for ((i, n) in t.args.withIndex()) {
-                val v = eval(n)
-                list.add(v)
-            }
-            return f.invoke(list, t)
+            throw Exception("undefined function $f")
         }
 
-        if (f is Function) {
-            val nestedEnv = NestedEnvironment(f.env)
-            for ((i, n) in t.args.withIndex()) {
-                val v = eval(n)
-                if (i < f.params.size) {
-                    nestedEnv.putNew(f.params[i].name(), v)
-                }
+        val member = t.callee as? ObjectMember
+        if (member != null) {
+            val m = evalT(member)
+            if (m is Function) {
+                return call(t, m)
             }
+            throw Exception("undefined function $member")
+        }
 
-            return switchEnv(nestedEnv) {
-                eval(f.body)
+        throw Exception("undefined function ${t.callee}")
+    }
+
+    private fun evalT(t: ObjectMember): Any? {
+        val obj = env.get(t.objName.name())
+        if (obj is StoneObject) {
+            return obj.get(t.memberName.name())
+        }
+
+        throw Exception("undefined object ${t.objName.name()}")
+    }
+
+    private fun call(t: FuncCall, f: NativeKotlinFunction): Any? {
+        if (f.numParams != t.args.size) {
+            throw Exception("cannot call native method: need ${f.numParams} arguments, but ${t.args.size}")
+        }
+        val list = mutableListOf<Any?>()
+        for ((i, n) in t.args.withIndex()) {
+            val v = eval(n)
+            list.add(v)
+        }
+        return f.invoke(list, t)
+    }
+
+    private fun call(t: FuncCall, f: Function): Any? {
+        val nestedEnv = NestedEnvironment(f.env)
+        for ((i, n) in t.args.withIndex()) {
+            val v = eval(n)
+            if (i < f.params.size) {
+                nestedEnv.putNew(f.params[i].name(), v)
             }
         }
 
-        throw Exception("undefined function $name")
+        return switchEnv(nestedEnv) {
+            eval(f.body)
+        }
+    }
+
+    private fun instantiate(c: ClassDef, baseObject: StoneObject? = null): StoneObject {
+        var b = baseObject
+        if (c.baseClassName != null) {
+            val base = globalEnv.get(c.baseClassName.name()) as? ClassDef
+            if (base == null) {
+                throw Exception("base class '${c.baseClassName.name()}' is undefined or is not class.")
+            }
+            b = instantiate(base, baseObject)
+        }
+
+        val i = if (b != null) StoneObject(c, b) else StoneObject(c, globalEnv)
+        switchEnv(i.getEnv()) {
+            for (n in c.variables) {
+                val v = eval(n.value)
+                i.set(n.name.name(), v)
+            }
+        }
+        return i
     }
 
     private fun switchEnv(newEnv: Environment, block: () -> Any?): Any? {
@@ -207,6 +269,5 @@ class Evaluator {
     }
 
 }
-
 
 

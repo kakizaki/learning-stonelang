@@ -13,7 +13,7 @@ class BasicEnvironment: Environment {
         return values[name]
     }
 
-    override fun has(name: String): Boolean {
+    override fun find(name: String): Boolean {
         return values.containsKey(name)
     }
 }

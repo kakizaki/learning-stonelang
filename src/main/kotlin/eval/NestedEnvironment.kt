@@ -13,12 +13,12 @@ class NestedEnvironment(private var outer: Environment): Environment {
     }
 
     override fun put(name: String, value: Any?) {
-        if (env.has(name)) {
+        if (env.find(name)) {
             env.put(name, value)
             return
         }
 
-        if (outer.has(name)) {
+        if (outer.find(name)) {
             outer.put(name, value)
         } else {
             env.put(name, value)
@@ -26,18 +26,23 @@ class NestedEnvironment(private var outer: Environment): Environment {
     }
 
     override fun get(name: String): Any? {
-        if (env.has(name)) {
+        if (env.find(name)) {
             return env.get(name)
         }
         return outer.get(name)
     }
 
-    override fun has(name: String): Boolean {
-        if (env.has(name)) {
+    override fun find(name: String): Boolean {
+        if (env.find(name)) {
             return true
         }
-        return outer.has(name)
+        return outer.find(name)
     }
+
+    fun has(name: String): Boolean {
+        return env.find(name)
+    }
+
 
 
 }

@@ -1,6 +1,20 @@
 package ast
 
 open class ASTList(private val list: List<ASTree>) : ASTree() {
+    companion object {
+        fun toString(list: Sequence<ASTree>): String {
+            val b = StringBuilder()
+            b.append('(')
+            var sep = ""
+            for (t in list) {
+                b.append(sep)
+                sep = " "
+                b.append(t.toString())
+            }
+            b.append(')')
+            return b.toString()
+        }
+    }
     override fun child(i: Int): ASTree {
         return list[i]
     }
@@ -24,15 +38,6 @@ open class ASTList(private val list: List<ASTree>) : ASTree() {
     }
 
     override fun toString(): String {
-        val b = StringBuilder()
-        b.append('(')
-        var sep = ""
-        for (t in list) {
-            b.append(sep)
-            sep = " "
-            b.append(t.toString())
-        }
-        b.append(')')
-        return b.toString()
+        return Companion.toString(list.asSequence())
     }
 }

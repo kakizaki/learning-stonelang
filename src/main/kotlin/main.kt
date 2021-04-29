@@ -1,6 +1,4 @@
-import ast.ASTree
 import eval.Evaluator
-import parser.OperationParseTest
 import parser.parseBlock
 import parser.parseExpr
 import parser.parseProgram
@@ -63,6 +61,11 @@ c()
 even = 0
 odd = 0
 i = 1
+
+;
+;
+
+
 while i < 10 {
   if i % 2 == 0 {
     even = even + i 
@@ -87,12 +90,13 @@ s = "1234"
 length(s)
 i = toInt(s)
 currentTime()
-r = read()
+//r = read()
+
         """.trimIndent()
     )
 
-    val evaluator = Evaluator()
     for (s in test3) {
+        val evaluator = Evaluator()
         println(" input: $s")
         val l = Lexer(StringReader(s))
         while (l.peek(0) != Token.EOF) {
