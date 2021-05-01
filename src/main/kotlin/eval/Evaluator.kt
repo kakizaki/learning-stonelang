@@ -1,6 +1,5 @@
 package eval
 
-import Token
 import ast.*
 
 
@@ -75,12 +74,12 @@ class Evaluator {
                 return v
             }
             is ObjectMember -> {
-                val o = env.get(l.objName.name())
+                val o = eval(l.callee)
                 if (o is StoneObject) {
                     val v = eval(t.right())
                     return o.set(l.memberName.name(), v)
                 }
-                throw Exception("bad assignment: ${l.objName.name()} is not ${StoneObject::class.simpleName}")
+                throw Exception("bad assignment: ${o} is not ${StoneObject::class.simpleName}")
             }
         }
 
@@ -206,12 +205,16 @@ class Evaluator {
     }
 
     private fun evalT(t: ObjectMember): Any? {
-        val obj = env.get(t.objName.name())
+        val obj = eval(t.callee)
         if (obj is StoneObject) {
             return obj.get(t.memberName.name())
         }
 
-        throw Exception("undefined object ${t.objName.name()}")
+        if (obj == null) {
+            throw Exception("undefined object: ${t.callee} is null")
+        } else {
+            throw Exception("undefined object: ${t.callee} is ${obj?.javaClass.simpleName}")
+        }
     }
 
     private fun call(t: FuncCall, f: NativeKotlinFunction): Any? {

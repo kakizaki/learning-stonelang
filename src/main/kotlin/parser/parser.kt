@@ -24,28 +24,47 @@ object ParseUtil {
 }
 
 // BNF
-// var-def:         IDENTIFIER [ "=" factor ]
-// class-member:    func-def | var-def
-// class-body:      "{" [ class-member ] { (";" | EOL) [ class-member ] } "}"
-// class-def:       "class" IDENTIFIER [ "extends" IDENTIFIER ] class-body
-// object-member:   IDENTIFIER "." IDENTIFIER
+// []: 0..1
+// {}: 0..n
+// (): 1
+//  = = = = = = = = = =
+// array-def:           "[" [ expr { "," expr } ] "]"
+//  = = = = = = = = = =
+// var-def:             IDENTIFIER [ "=" factor ]
+// class-member:        func-def | var-def
+// class-body:          "{" [ class-member ] { (";" | EOL) [ class-member ] } "}"
+// class-def:           "class" IDENTIFIER [ "extends" IDENTIFIER ] class-body
+//  = = = = = = = = = =
+// param-list:          IDENTIFIER { "," IDENTIFIER }
+// func-def:            "def" IDENTIFIER "(" [ param-list ] ")" block
+// closure-def:         "def" "(" [ param-list ] ")" block
+//  = = = = = = = = = =
+// primary-postfix:     ( --fun-call | --array-indexer | --class-property )
+// --func-call:         "(" [ expr { "," expr } ] ")"
+// --member:            "." IDENTIFIER
+// --array-indexer:     "[" expr "]"
+// primary:             (
+//                      "(" expr ")"
+//                      | NUMBER
+//                      | STRING
+//                      | IDENTIFIER
+//                      | closure-def
+//                      | array
+//                      )
+//                      { primary-postfix }
 
-// param-list:      IDENTIFIER ( "," IDENTIFIER )
-// func-def:        "def" IDENTIFIER "(" [ param-list ] ")" block
-// closure-def:     "def" "(" [ param-list ] ")" block
-// arg-list:        expr ( "," expr )
-// func-call:       ( IDENTIFIER | object-member ) "(" [ arg-list ] ")"
-
-// primary-sub: IDENTIFIER [ "." IDENTIFIER ] [ "(" [ arg-list ] ")" ]
-// primary:     "(" expr ")" | NUMBER | STRING | IDENTIFIER | func-call | closure-def | object-member
 // factor:      "-" primary | primary
 // expr:        factor { OP factor }
-// block:       "{" [ statement ] {(";" | EOL) [ statement ]} "}"
+// block:       "{" [ statement ] { (";" | EOL) [ statement ] } "}"
 // simple:      expr
 // statement:   "if" expr block [ "else" block ]
 //              | "while" expr block
 //              | simple
 // program:     [ func-def | class-def | statement ] (";" | EOL)
+
+
+
+
 
 fun parseError(t: Token): Exception {
     return Exception("parse error ${t.getText()}")
@@ -88,8 +107,23 @@ fun isReservedIdentifier(t: Token): Boolean {
     }
 }
 
-fun isStatementBeginning(l: Lexer): Boolean {
-    return isStatementBeginning(l.peek(0))
+fun isPrimaryBeginning(t: Token): Boolean {
+    if (t.isNumber()) return true
+    if (t.isString()) return true
+    if (t.isIdentifier()) {
+        val text = t.getText()
+
+        // expr
+        if (text == "(") return true
+
+        // closure
+        if (text == "def") return true
+
+        if (isReservedIdentifier(t) == false) {
+            return true
+        }
+    }
+    return false
 }
 
 fun isStatementBeginning(t: Token): Boolean {
@@ -107,26 +141,19 @@ fun isStatementBeginning(t: Token): Boolean {
     }
 
     // primary
-    if (t.isNumber()) return true
-    if (t.isString()) return true
-    if (t.isIdentifier()) {
-        if (text == "(") return true
-        if (text == "def") return true
-        if (isReservedIdentifier(t) == false) {
-            return true
-        }
-    }
+    if (isPrimaryBeginning(t)) return true
+
     return false
 }
 
-fun isFuncDefBegining(t: Token): Boolean {
+fun isFuncDefBeginning(t: Token): Boolean {
     if (t.isIdentifier() && t.getText() == "def") {
         return true
     }
     return false
 }
 
-fun isClassDefBegining(t: Token): Boolean {
+fun isClassDefBeginning(t: Token): Boolean {
     if (t.isIdentifier() && t.getText() == "class") {
         return true
     }
@@ -138,8 +165,8 @@ fun parseProgram(l: Lexer): ASTree {
     val t = l.peek(0)
 
     val tree = when {
-        isFuncDefBegining(t) -> parseFuncDef(l)
-        isClassDefBegining(t) -> parseClassDef(l)
+        isFuncDefBeginning(t) -> parseFuncDef(l)
+        isClassDefBeginning(t) -> parseClassDef(l)
         isStatementBeginning(t) -> parseStatement(l)
         else -> NullStatement()
     }
@@ -149,23 +176,6 @@ fun parseProgram(l: Lexer): ASTree {
     }
 
     throw parseError(l.read())
-}
-
-fun parseObjectMember(l: Lexer): ObjectMember {
-    val objName = l.read()
-    if (isReservedIdentifier(objName)) {
-        throw parseError(objName)
-    }
-
-    if (readIf(l, ".") == null) {
-        throw parseError(l)
-    }
-
-    val memberName = l.read()
-    if (isReservedIdentifier(memberName)) {
-        throw parseError(memberName)
-    }
-    return ObjectMember(Name(objName), Name(memberName))
 }
 
 fun parseFuncDef(l: Lexer): FuncDef {
@@ -225,7 +235,7 @@ fun parseVarDef(l: Lexer): VarDef {
 
 fun parseClassMember(l: Lexer): ASTree {
     val t = l.peek(0)
-    if (isFuncDefBegining(t)) {
+    if (isFuncDefBeginning(t)) {
         return parseFuncDef(l)
     }
     return parseVarDef(l)
@@ -329,7 +339,10 @@ fun parseSimple(l: Lexer): ASTree {
     return parseExpr(l)
 }
 
-fun <T> parseLines(l: Lexer, parser: (Lexer)->(T)): Sequence<T> {
+
+// 以下のような BNF のパターンをパースする
+// BNF:: "{" parsedObject { ( ";" | EOL ) [ parsedObject ] } "}"
+fun <T> parseLines(l: Lexer, parser: (Lexer) -> T): Sequence<T> {
     return sequence {
         if (readIf(l, "{") == null) {
             throw parseError(l)
@@ -349,6 +362,39 @@ fun <T> parseLines(l: Lexer, parser: (Lexer)->(T)): Sequence<T> {
         }
     }
 }
+
+// 以下のような BNF のパターンをパースする
+// BNF::    openChar [ parsedObject { (splitChars) parsedObject } ] closeChar
+// ex. ( )
+// ex. ( aaa )
+// ex. ( aaa , bbb , ccc )
+fun <T> parseSplitToken(
+    l: Lexer,
+    openChar: String,
+    splitChars: Array<String>,
+    closeChar: String,
+    parser: (Lexer) -> T
+): Sequence<T> {
+    return sequence {
+        if (readIf(l, openChar) == null) {
+            throw parseError(l)
+        }
+
+        var first = true
+        while (readIf(l, closeChar) == null) {
+            if (first == false) {
+                if (readIf(l, *splitChars) == null) {
+                    throw parseError(l)
+                }
+            }
+
+            yield(parser(l))
+            first = false
+        }
+    }
+}
+
+
 
 fun parseBlock(l: Lexer): BlockStatement {
     val list = parseLines(l) {
@@ -383,7 +429,7 @@ fun parseFactor(l: Lexer): ASTree {
     }
 }
 
-fun parsePrimary(l: Lexer): ASTree {
+fun parsePrimaryT(l: Lexer): ASTree {
     val t = l.peek(0)
 
     if (t.isNumber()) {
@@ -402,7 +448,6 @@ fun parsePrimary(l: Lexer): ASTree {
         if (readIf(l, ")") != null) {
             return expr
         }
-
         throw parseError(l)
     }
 
@@ -410,43 +455,54 @@ fun parsePrimary(l: Lexer): ASTree {
         if (t.getText() == "def") {
             return parseFuncLiteralDef(l)
         }
+        return Name(l.read())
+    }
+    throw parseError(l)
+}
 
-        val obj = if (l.peek(1).let { it.isIdentifier() && it.getText() == "." }) {
-            parseObjectMember(l)
-        } else {
-            if (isReservedIdentifier(t)) throw parseError(t)
-            Name(l.read())
-        }
+fun parseFuncArg(l: Lexer): List<ASTree> {
+    return parseSplitToken(l, "(", arrayOf(","), ")") {
+        parseExpr(l)
+    }.toList()
+}
 
-        if (readIf(l, "(") == null) {
-            return obj
-        }
-
-        val args = mutableListOf<ASTree>()
-        if (readIf(l, ")") == null) {
-            while (true) {
-                val a = parseExpr(l)
-                args.add(a)
-
-                if (readIf(l, ")") != null) {
-                    break
-                }
-                if (readIf(l, ",") == null) {
-                    throw parseError(l.read())
-                }
+fun tryWrapPrimaryPostfix(l: Lexer, target: ASTree): ASTree? {
+    val t = l.peek(0)
+    if (t.isIdentifier() && t.getText() == ".") {
+        l.read()
+        val name = l.read().let {
+            if (isReservedIdentifier(it)) {
+                throw parseError(it)
             }
+            if (it.isIdentifier() == false) {
+                throw parseError(it)
+            }
+            Name(it)
         }
-        return FuncCall(obj, args)
+        return ObjectMember(target, name)
     }
 
-    throw parseError(t)
+    if (t.isIdentifier() && t.getText() == "(") {
+        val args = parseFuncArg(l)
+        return FuncCall(target, args)
+    }
+
+    return null
 }
 
 
+fun parsePrimary(l: Lexer): ASTree {
+    var p = parsePrimaryT(l)
 
-
-
-
-
+    while (true) {
+        val w = tryWrapPrimaryPostfix(l, p)
+        if (w != null) {
+            p = w
+        } else {
+            break
+        }
+    }
+    return p
+}
 
 

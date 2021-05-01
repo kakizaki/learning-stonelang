@@ -2,6 +2,7 @@ import Util.evalCode
 import Util.evalCodeError
 import eval.Evaluator
 import org.junit.Test
+import kotlin.test.assertFails
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 
@@ -12,7 +13,6 @@ class TestClass {
     @Test
     fun memberVariable() {
         val evaluator = Evaluator()
-
         val s = """
 class classA {
   b = 2

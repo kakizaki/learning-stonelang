@@ -1,11 +1,11 @@
 package ast
 
 class ObjectMember(
-    val objName: Name,
+    val callee: ASTree,
     val memberName: Name
-): ASTList(listOf(objName, memberName)) {
+): ASTList(listOf(callee, memberName)) {
 
     override fun toString(): String {
-        return "($objName.$memberName)"
+        return "($callee.$memberName)"
     }
 }
