@@ -39,7 +39,7 @@ object ParseUtil {
 // func-def:            "def" IDENTIFIER "(" [ param-list ] ")" block
 // closure-def:         "def" "(" [ param-list ] ")" block
 //  = = = = = = = = = =
-// primary-postfix:     ( --fun-call | --array-indexer | --class-property )
+// primary-postfix:     ( --func-call | -member | --array-indexer )
 // --func-call:         "(" [ expr { "," expr } ] ")"
 // --member:            "." IDENTIFIER
 // --array-indexer:     "[" expr "]"
