@@ -21,7 +21,58 @@ object ParseUtil {
         }
     }
 
+    // 以下のような BNF のパターンをパースする
+    // BNF:: "{" [ parsedObject ] { ( ";" | EOL ) [ parsedObject ] } "}"
+    fun <T> parseLines(l: Lexer, parser: (Lexer) -> T): Sequence<T> {
+        return sequence {
+            if (readIf(l, "{") == null) {
+                throw parseError(l)
+            }
+
+            var waitLineBreak = false
+            while (readIf(l, "}") == null) {
+                if (readIf(l, ";", Token.EOL) != null) {
+                    waitLineBreak = false
+                    continue
+                }
+                if (waitLineBreak) {
+                    throw parseError(l)
+                }
+                yield(parser(l))
+                waitLineBreak = true
+            }
+        }
+    }
+
+    // 以下のような BNF のパターンをパースする
+    // BNF::    openBracket [ parsedObject { (splitChars) parsedObject } ] closeBracket
+    // ex. ( )
+    // ex. ( aaa )
+    // ex. ( aaa , bbb , ccc )
+    fun <T> parseSplitToken(
+        l: Lexer,
+        openBracket: String,
+        splitChars: Array<String>,
+        closeBracket: String,
+        parser: (Lexer) -> T
+    ): Sequence<T> {
+        return sequence {
+            if (readIf(l, openBracket) == null) {
+                throw parseError(l)
+            }
+            if (readIf(l, closeBracket) == null) {
+                yield(parser(l))
+                while (readIf(l, closeBracket) == null) {
+                    if (readIf(l, *splitChars) == null) {
+                        throw parseError(l)
+                    }
+                    yield(parser(l))
+                }
+            }
+        }
+    }
 }
+
 
 // BNF
 // []: 0..1
@@ -30,26 +81,29 @@ object ParseUtil {
 //  = = = = = = = = = =
 // array-def:           "[" [ expr { "," expr } ] "]"
 //  = = = = = = = = = =
-// var-def:             IDENTIFIER [ "=" factor ]
+// user-def-name:       IDENTIFIER
+//                      予約語以外
+//  = = = = = = = = = =
+// var-def:             user-def-name [ "=" factor ]
 // class-member:        func-def | var-def
 // class-body:          "{" [ class-member ] { (";" | EOL) [ class-member ] } "}"
-// class-def:           "class" IDENTIFIER [ "extends" IDENTIFIER ] class-body
+// class-def:           "class" user-def-name [ "extends" user-def-name ] class-body
 //  = = = = = = = = = =
-// param-list:          IDENTIFIER { "," IDENTIFIER }
-// func-def:            "def" IDENTIFIER "(" [ param-list ] ")" block
-// closure-def:         "def" "(" [ param-list ] ")" block
+// func-params:          "(" [ user-def-name { "," user-def-name } ] ")"
+// func-def:            "def" user-def-name func-params block
+// closure-def:         "def" func-params block
 //  = = = = = = = = = =
 // primary-postfix:     ( --func-call | -member | --array-indexer )
 // --func-call:         "(" [ expr { "," expr } ] ")"
-// --member:            "." IDENTIFIER
+// --member:            "." user-def-name
 // --array-indexer:     "[" expr "]"
 // primary:             (
 //                      "(" expr ")"
 //                      | NUMBER
 //                      | STRING
-//                      | IDENTIFIER
+//                      | user-def-name
 //                      | closure-def
-//                      | array
+//                      | array-def
 //                      )
 //                      { primary-postfix }
 
@@ -160,6 +214,15 @@ fun isClassDefBeginning(t: Token): Boolean {
     return false
 }
 
+fun parseDefName(l: Lexer): Name {
+    return l.read().let {
+        if (it.isIdentifier() && isReservedIdentifier(it) == false) {
+            Name(it)
+        } else {
+            throw parseError(it)
+        }
+    }
+}
 
 fun parseProgram(l: Lexer): ASTree {
     val t = l.peek(0)
@@ -178,59 +241,32 @@ fun parseProgram(l: Lexer): ASTree {
     throw parseError(l.read())
 }
 
+fun parseFuncParams(l: Lexer): List<Name> {
+    return ParseUtil.parseSplitToken(l, "(", arrayOf(","), ")") {
+        parseDefName(l)
+    }.toList()
+}
+
 fun parseFuncDef(l: Lexer): FuncDef {
     if (readIf(l, "def") == null) {
         throw parseError(l.read())
     }
 
-    val defName = l.read()
-    if (defName.isIdentifier() == false) {
-        throw parseError(defName)
-    }
-    if (isReservedIdentifier(defName)) {
-        throw parseError(defName)
-    }
-
-    if (readIf(l, "(") == null) {
-        throw parseError(l.read())
-    }
-
-    val params = mutableListOf<Name>()
-    if (readIf(l, ")") == null) {
-        while (true) {
-            val p = l.read()
-            if (p.isIdentifier() && isReservedIdentifier(p) == false) {
-                params.add(Name(p))
-            } else {
-                throw parseError(p)
-            }
-            if (readIf(l, ")") != null) {
-                break
-            }
-            if (readIf(l, ",") == null) {
-                throw parseError(p)
-            }
-        }
-    }
-
+    val defName = parseDefName(l)
+    val params = parseFuncParams(l)
     val body = parseBlock(l)
-    return FuncDef(Name(defName), params, body)
+    return FuncDef(defName, params, body)
 }
 
 fun parseVarDef(l: Lexer): VarDef {
-    val t = l.read()
-    if (t.isIdentifier() == false) {
-        throw parseError(t)
-    }
-    if (isReservedIdentifier(t)) {
-        throw parseError(t)
-    }
+    val varName = parseDefName(l)
+
     val v = if (readIf(l, "=") == null)  {
         NullStatement()
     } else {
         parseFactor(l)
     }
-    return VarDef(Name(t), v)
+    return VarDef(varName, v)
 }
 
 fun parseClassMember(l: Lexer): ASTree {
@@ -244,7 +280,7 @@ fun parseClassMember(l: Lexer): ASTree {
 fun parseClassBody(l: Lexer): Pair<List<VarDef>, List<FuncDef>> {
     val varList = mutableListOf<VarDef>()
     val funcList = mutableListOf<FuncDef>()
-    for (n in parseLines(l) { parseClassMember(l) }) {
+    for (n in ParseUtil.parseLines(l) { parseClassMember(l) }) {
         when (n) {
             is VarDef -> varList.add(n)
             is FuncDef -> funcList.add(n)
@@ -259,26 +295,18 @@ fun parseClassDef(l: Lexer): ClassDef {
         throw parseError(l.read())
     }
 
-    val className = l.read()
-    if (isReservedIdentifier(className)) {
-        throw parseError(className)
-    }
-
+    val className = parseDefName(l)
     val baseClass = if (readIf(l, "extends") == null) {
         null
     } else {
-        l.read().apply {
-            if (isReservedIdentifier(this)) {
-                throw parseError(this)
-            }
-        }
+        parseDefName(l)
     }
 
     val (varList, funcList) = parseClassBody(l)
     return if (baseClass == null) {
-        ClassDef(Name(className), varList, funcList)
+        ClassDef(className, varList, funcList)
     } else {
-        ClassDef(Name(className), Name(baseClass), varList, funcList)
+        ClassDef(className, baseClass, varList, funcList)
     }
 }
 
@@ -287,28 +315,7 @@ fun parseFuncLiteralDef(l: Lexer): FuncLiteralDef {
         throw parseError(l.read())
     }
 
-    if (readIf(l, "(") == null) {
-        throw parseError(l.read())
-    }
-
-    val params = mutableListOf<Name>()
-    if (readIf(l, ")") == null) {
-        while (true) {
-            val p = l.read()
-            if (p.isIdentifier() && isReservedIdentifier(p) == false) {
-                params.add(Name(p))
-            } else {
-                throw parseError(p)
-            }
-            if (readIf(l, ")") != null) {
-                break
-            }
-            if (readIf(l, ",") == null) {
-                throw parseError(p)
-            }
-        }
-    }
-
+    val params = parseFuncParams(l)
     val body = parseBlock(l)
     return FuncLiteralDef(params, body)
 }
@@ -340,64 +347,10 @@ fun parseSimple(l: Lexer): ASTree {
 }
 
 
-// 以下のような BNF のパターンをパースする
-// BNF:: "{" parsedObject { ( ";" | EOL ) [ parsedObject ] } "}"
-fun <T> parseLines(l: Lexer, parser: (Lexer) -> T): Sequence<T> {
-    return sequence {
-        if (readIf(l, "{") == null) {
-            throw parseError(l)
-        }
-
-        var waitLineBreak = false
-        while (readIf(l, "}") == null) {
-            if (readIf(l, ";", Token.EOL) != null) {
-                waitLineBreak = false
-                continue
-            }
-            if (waitLineBreak) {
-                throw parseError(l)
-            }
-            yield(parser(l))
-            waitLineBreak = true
-        }
-    }
-}
-
-// 以下のような BNF のパターンをパースする
-// BNF::    openChar [ parsedObject { (splitChars) parsedObject } ] closeChar
-// ex. ( )
-// ex. ( aaa )
-// ex. ( aaa , bbb , ccc )
-fun <T> parseSplitToken(
-    l: Lexer,
-    openChar: String,
-    splitChars: Array<String>,
-    closeChar: String,
-    parser: (Lexer) -> T
-): Sequence<T> {
-    return sequence {
-        if (readIf(l, openChar) == null) {
-            throw parseError(l)
-        }
-
-        var first = true
-        while (readIf(l, closeChar) == null) {
-            if (first == false) {
-                if (readIf(l, *splitChars) == null) {
-                    throw parseError(l)
-                }
-            }
-
-            yield(parser(l))
-            first = false
-        }
-    }
-}
-
 
 
 fun parseBlock(l: Lexer): BlockStatement {
-    val list = parseLines(l) {
+    val list = ParseUtil.parseLines(l) {
         parseStatement(l)
     }.toList()
     return BlockStatement(list)
@@ -451,17 +404,15 @@ fun parsePrimaryT(l: Lexer): ASTree {
         throw parseError(l)
     }
 
-    if (t.isIdentifier()) {
-        if (t.getText() == "def") {
-            return parseFuncLiteralDef(l)
-        }
-        return Name(l.read())
+    if (isFuncDefBeginning(t)) {
+        return parseFuncLiteralDef(l)
     }
-    throw parseError(l)
+
+    return parseDefName(l)
 }
 
 fun parseFuncArg(l: Lexer): List<ASTree> {
-    return parseSplitToken(l, "(", arrayOf(","), ")") {
+    return ParseUtil.parseSplitToken(l, "(", arrayOf(","), ")") {
         parseExpr(l)
     }.toList()
 }
@@ -470,15 +421,7 @@ fun tryWrapPrimaryPostfix(l: Lexer, target: ASTree): ASTree? {
     val t = l.peek(0)
     if (t.isIdentifier() && t.getText() == ".") {
         l.read()
-        val name = l.read().let {
-            if (isReservedIdentifier(it)) {
-                throw parseError(it)
-            }
-            if (it.isIdentifier() == false) {
-                throw parseError(it)
-            }
-            Name(it)
-        }
+        val name = parseDefName(l)
         return ObjectMember(target, name)
     }
 
