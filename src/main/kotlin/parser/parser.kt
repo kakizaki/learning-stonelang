@@ -164,15 +164,20 @@ fun isReservedIdentifier(t: Token): Boolean {
 fun isPrimaryBeginning(t: Token): Boolean {
     if (t.isNumber()) return true
     if (t.isString()) return true
+
+    // closure
+    if (isFuncDefBeginning(t)) return true
+
+    // array
+    if (isArrayDefBeginning(t)) return true
+
     if (t.isIdentifier()) {
         val text = t.getText()
 
         // expr
         if (text == "(") return true
 
-        // closure
-        if (text == "def") return true
-
+        // user-def-name
         if (isReservedIdentifier(t) == false) {
             return true
         }
@@ -202,6 +207,13 @@ fun isStatementBeginning(t: Token): Boolean {
 
 fun isFuncDefBeginning(t: Token): Boolean {
     if (t.isIdentifier() && t.getText() == "def") {
+        return true
+    }
+    return false
+}
+
+fun isArrayDefBeginning(t: Token): Boolean {
+    if (t.isIdentifier() && t.getText() == "[") {
         return true
     }
     return false
@@ -320,6 +332,13 @@ fun parseFuncLiteralDef(l: Lexer): FuncLiteralDef {
     return FuncLiteralDef(params, body)
 }
 
+fun parseArrayDef(l: Lexer): ASTree {
+    val list = ParseUtil.parseSplitToken(l, "[", arrayOf(","), "]") {
+        parseExpr(l)
+    }.toList()
+    return ArrayDef(list)
+}
+
 fun parseStatement(l: Lexer): ASTree {
     if (readIf(l, "if") != null) {
         val expr = parseExpr(l)
@@ -408,6 +427,10 @@ fun parsePrimaryT(l: Lexer): ASTree {
         return parseFuncLiteralDef(l)
     }
 
+    if (isArrayDefBeginning(t)) {
+        return parseArrayDef(l)
+    }
+
     return parseDefName(l)
 }
 
@@ -428,6 +451,15 @@ fun tryWrapPrimaryPostfix(l: Lexer, target: ASTree): ASTree? {
     if (t.isIdentifier() && t.getText() == "(") {
         val args = parseFuncArg(l)
         return FuncCall(target, args)
+    }
+
+    if (t.isIdentifier() && t.getText() == "[") {
+        l.read()
+        val indexer = parseExpr(l)
+        if (readIf(l, "]") == null) {
+            throw parseError(l)
+        }
+        return ArrayIndexer(target, indexer)
     }
 
     return null

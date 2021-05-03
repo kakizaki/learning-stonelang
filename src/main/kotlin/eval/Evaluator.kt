@@ -49,6 +49,8 @@ class Evaluator {
             is FuncCall -> return evalT(t)
             is FuncLiteralDef -> return evalT(t)
             is ObjectMember -> return evalT(t)
+            is ArrayDef -> return evalT(t)
+            is ArrayIndexer -> return evalT(t)
         }
 
         throw Exception("cannot eval: ${t.javaClass.simpleName} : $t")
@@ -80,6 +82,19 @@ class Evaluator {
                     return o.set(l.memberName.name(), v)
                 }
                 throw Exception("bad assignment: ${o} is not ${StoneObject::class.simpleName}")
+            }
+            is ArrayIndexer -> {
+                val o = eval(l.callee)
+                if (o is StoneArray == false) {
+                    throw Exception("bad assignment: ${o} is not ${StoneArray::class.simpleName}")
+                }
+                val i = eval(l.indexer)
+                if (i is Int == false) {
+                    throw Exception("bad assignment: ${i} is not Int")
+                }
+                val v = eval(t.right())
+                o.list[i] = v
+                return v
             }
         }
 
@@ -213,8 +228,29 @@ class Evaluator {
         if (obj == null) {
             throw Exception("undefined object: ${t.callee} is null")
         } else {
-            throw Exception("undefined object: ${t.callee} is ${obj?.javaClass.simpleName}")
+            throw Exception("undefined object: ${t.callee} is ${obj.javaClass.simpleName}")
         }
+    }
+
+    private fun evalT(t: ArrayDef): Any? {
+        val list = Array<Any?>(t.elements.size) {
+            eval(t.elements[it])
+        }
+        return StoneArray(list)
+    }
+
+    private fun evalT(t: ArrayIndexer): Any? {
+        val v = eval(t.callee)
+        if (v is StoneArray == false) {
+            throw Exception("${t.callee} is not array.")
+        }
+
+        val i = eval(t.indexer)
+        if (i is Int == false) {
+            throw Exception("${t.indexer} is not number.")
+        }
+
+        return v.list[i]
     }
 
     private fun call(t: FuncCall, f: NativeKotlinFunction): Any? {
